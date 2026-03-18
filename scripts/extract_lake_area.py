@@ -8,80 +8,31 @@ ee.Initialize(project='glacier-risk-project')
 with open("config/lakes.json") as f:
     lakes = json.load(f)
 
-start_year = 2017
-end_year = 2024
+start_date = '2015-01-01'
+end_date = '2024-01-01'
 
 results = []
 
-# --- Cloud Mask Function ---
-def mask_clouds(image):
-    qa = image.select('QA60')
+# -------------------------------
+# PROCESS JRC IMAGE
+# -------------------------------
+def process_image(image, geometry, lake_id):
 
-    cloud_bit_mask = 1 << 10
-    cirrus_bit_mask = 1 << 11
+    water = image.select('water')
 
-    mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(
-           qa.bitwiseAnd(cirrus_bit_mask).eq(0))
+    # water == 2 → water pixels
+    water_mask = water.eq(2)
 
-    return image.updateMask(mask)
-
-# --- Process each month ---
-def process_month(year, month, geometry, lake_id):
-
-    # Skip winter months (snow + frozen lake)
-    if month in [1, 2, 3]:
-        return None
-
-    start = ee.Date.fromYMD(year, month, 1)
-    end = start.advance(1, 'month')
-
-    collection = (
-        ee.ImageCollection("COPERNICUS/S2_SR")
-        .filterBounds(geometry)
-        .filterDate(start, end)
-        .map(mask_clouds)
-    )
-
-    if collection.size().getInfo() == 0:
-        return None
-
-    image = collection.median().clip(geometry)
-
-    # NDWI
-    ndwi = image.normalizedDifference(['B3','B8'])
-
-    # MNDWI
-    mndwi = image.normalizedDifference(['B3','B11'])
-
-    # Stronger water condition
-    water = ndwi.gt(0.1).And(mndwi.gt(0))
-
-    # ---- KEY FIX: Keep only largest water body ----
-    connected = water.selfMask().connectedComponents(
-        connectedness=ee.Kernel.plus(1),
-        maxSize=1000
-    )
-
-    largest_label = connected.select('labels').reduceRegion(
-        reducer=ee.Reducer.mode(),
-        geometry=geometry,
-        scale=10,
-        maxPixels=1e9
-    ).get('labels')
-
-    main_water = connected.select('labels').eq(largest_label)
-
-    # ---- Area calculation ----
-    area_img = main_water.multiply(ee.Image.pixelArea())
+    area_img = water_mask.multiply(ee.Image.pixelArea())
 
     stats = area_img.reduceRegion(
         reducer=ee.Reducer.sum(),
         geometry=geometry,
-        scale=10,
+        scale=30,
         maxPixels=1e9
     )
 
-    area = stats.get('labels')
+    area = stats.get('water')
 
     if area is None:
         return None
@@ -90,42 +41,96 @@ def process_month(year, month, geometry, lake_id):
 
     return {
         "lake_id": lake_id,
-        "date": f"{year}-{month:02d}-01",
+        "date": image.date().format("YYYY-MM-dd").getInfo(),
         "lake_area_km2": area_km2
     }
 
-# --- Main Loop ---
+# -------------------------------
+# MAIN LOOP
+# -------------------------------
 for lake in lakes:
 
     lake_id = lake["lake_id"]
-    lat = lake["lat"]
-    lon = lake["lon"]
-    buffer = 5000  # Increased buffer
+    bbox = lake["bbox"]
+    geometry = ee.Geometry.Rectangle(bbox)
 
-    geometry = ee.Geometry.Rectangle([86.90, 27.88, 86.96, 27.92])
+    collection = (
+        ee.ImageCollection("JRC/GSW1_4/MonthlyHistory")
+        .filterDate(start_date, end_date)
+        .filterBounds(geometry)
+    )
 
-    for year in range(start_year, end_year + 1):
-        for month in range(1, 13):
+    images = collection.toList(collection.size())
 
-            try:
-                result = process_month(year, month, geometry, lake_id)
+    for i in range(collection.size().getInfo()):
 
-                if result:
-                    results.append(result)
+        try:
+            image = ee.Image(images.get(i))
 
-            except Exception as e:
-                print(f"{lake_id} {year}-{month} error: {e}")
+            result = process_image(image, geometry, lake_id)
 
-# Convert to dataframe
+            if result:
+                results.append(result)
+
+        except Exception as e:
+            print(f"{lake_id} error: {e}")
+
+# -------------------------------
+# DATAFRAME PROCESSING
+# -------------------------------
 df = pd.DataFrame(results)
 
-# Remove duplicates
-df = df.drop_duplicates(subset=["lake_id","date"])
+df = df.drop_duplicates(subset=["lake_id", "date"])
 
-# Sort
 df["date"] = pd.to_datetime(df["date"])
-df = df.sort_values(["lake_id","date"])
 
-df.to_csv("data/raw/lake_area_timeseries.csv", index=False)
+df = df.sort_values(["lake_id", "date"])
 
-print("Final clean dataset saved!")
+# Remove only noise
+df = df[df["lake_area_km2"] > 0.5]
+
+# -------------------------------
+# CREATE FULL DATE RANGE PER LAKE
+# -------------------------------
+final_dfs = []
+
+for lake_id, group in df.groupby("lake_id"):
+
+    group = group.set_index("date")
+
+    # Create full monthly range
+    full_range = pd.date_range(
+        start=group.index.min(),
+        end=group.index.max(),
+        freq="MS"
+    )
+
+    group = group.reindex(full_range)
+
+    group["lake_id"] = lake_id
+
+    # -------------------------------
+    # INTERPOLATION (CORRECT)
+    # -------------------------------
+    group["lake_area_km2"] = group["lake_area_km2"].interpolate(
+        method="linear",
+        limit_direction="both"
+    )
+
+    # Final fill (edge safety)
+    group["lake_area_km2"] = group["lake_area_km2"].bfill().ffill()
+
+    group = group.reset_index().rename(columns={"index": "date"})
+
+    final_dfs.append(group)
+
+# Combine all lakes
+df = pd.concat(final_dfs, ignore_index=True)
+
+# Sort again
+df = df.sort_values(["lake_id", "date"])
+
+# Save
+df.to_csv("data/raw/lake_area_timeseries_clean.csv", index=False)
+
+print("✅ Final CLEAN dataset created successfully!")
