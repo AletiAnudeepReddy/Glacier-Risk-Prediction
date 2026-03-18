@@ -1,15 +1,15 @@
 import pandas as pd
 
 # -------------------------------
-# LOAD ALL LAKE FILES
+# LOAD ALL LAKE FILES (WITH CLIMATE)
 # -------------------------------
-df_L1 = pd.read_csv("data/raw/L1_imja_tsho_clean.csv")
-df_L2 = pd.read_csv("data/raw/L2_tsho_rolpa_clean.csv")
-df_L3 = pd.read_csv("data/raw/L3_lower_barun_clean.csv")
-df_L4 = pd.read_csv("data/raw/L4_lumding_clean.csv")
+df_L1 = pd.read_csv("data/with_temperature/L1_with_climate.csv")
+df_L2 = pd.read_csv("data/with_temperature/L2_with_climate.csv")
+df_L3 = pd.read_csv("data/with_temperature/L3_with_climate.csv")
+df_L4 = pd.read_csv("data/with_temperature/L4_with_climate.csv")
 
 # -------------------------------
-# COMBINE
+# COMBINE ALL LAKES
 # -------------------------------
 df = pd.concat([df_L1, df_L2, df_L3, df_L4], ignore_index=True)
 
@@ -18,15 +18,22 @@ df = pd.concat([df_L1, df_L2, df_L3, df_L4], ignore_index=True)
 # -------------------------------
 df["date"] = pd.to_datetime(df["date"])
 
-# Sort properly (VERY IMPORTANT)
+# Sort (CRITICAL for time-series ML)
 df = df.sort_values(["lake_id", "date"])
 
 # Reset index
 df = df.reset_index(drop=True)
 
 # -------------------------------
-# SAVE COMBINED DATA
+# FINAL CHECK (DON'T SKIP THIS)
 # -------------------------------
-df.to_csv("data/processed/combined_lake_data.csv", index=False)
+print(df.head())
+print(df.columns)
+print(df.isnull().sum())
 
-print("✅ Combined dataset saved at: data/processed/combined_lake_data.csv")
+# -------------------------------
+# SAVE FINAL DATASET
+# -------------------------------
+df.to_csv("data/processed/final_combined_dataset.csv", index=False)
+
+print("✅ FINAL dataset saved at: data/processed/combined_lake_data.csv")
