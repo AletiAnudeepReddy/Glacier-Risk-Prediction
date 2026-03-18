@@ -131,6 +131,6 @@ df = pd.concat(final_dfs, ignore_index=True)
 df = df.sort_values(["lake_id", "date"])
 
 # Save
-df.to_csv("data/raw/lake_area_timeseries_clean.csv", index=False)
+df.to_csv("data/raw/L1_imja_tsho_clean.csv", index=False)
 
 print("✅ Final CLEAN dataset created successfully!")

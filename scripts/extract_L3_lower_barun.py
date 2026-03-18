@@ -10,7 +10,7 @@ lake_id = "L3"
 lake_name = "Lower Barun"
 
 # Tight bbox (important for small lake)
-bbox = [87.08, 27.82, 87.11, 27.85]
+bbox = [87.06, 27.80, 87.12, 27.86]
 geometry = ee.Geometry.Rectangle(bbox)
 
 start_date = '2015-01-01'
@@ -91,8 +91,7 @@ df = df.sort_values("date")
 # -------------------------------
 # 🔥 IMPORTANT FILTER (L3 specific)
 # -------------------------------
-df = df[(df["lake_area_km2"] > 0.3) & (df["lake_area_km2"] < 2.0)]
-
+df = df[(df["lake_area_km2"] > 0.5) & (df["lake_area_km2"] < 1.5)]
 # -------------------------------
 # CREATE FULL TIMELINE
 # -------------------------------
