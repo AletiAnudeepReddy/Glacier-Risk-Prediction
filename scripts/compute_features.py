@@ -1,34 +1,79 @@
 import pandas as pd
+import numpy as np
 
-df = pd.read_csv("data/processed/combined_lake_data.csv")
+# -------------------------------
+# LOAD FINAL DATASET (WITH CLIMATE)
+# -------------------------------
+df = pd.read_csv("data/processed/final_combined_dataset.csv")
 
 df["date"] = pd.to_datetime(df["date"])
 
+# Sort properly
 df = df.sort_values(["lake_id", "date"])
 
-# Previous area
-df["area_previous"] = df.groupby("lake_id")["lake_area_km2"].shift(1)
+# -------------------------------
+# TEMPORAL FEATURES (LAGS)
+# -------------------------------
+for lag in [1, 2, 3]:
+    df[f"area_lag_{lag}"] = df.groupby("lake_id")["lake_area_km2"].shift(lag)
 
-# Change
-df["area_change"] = df["lake_area_km2"] - df["area_previous"]
+# -------------------------------
+# CHANGE & GROWTH
+# -------------------------------
+df["area_change"] = df["lake_area_km2"] - df["area_lag_1"]
+df["growth_rate"] = df["area_change"] / df["area_lag_1"]
 
-# Growth rate
-df["growth_rate"] = df["area_change"] / df["area_previous"]
+# Fix division issues
+df["growth_rate"] = df["growth_rate"].replace([np.inf, -np.inf], 0)
 
-# Handle division issues
-df["growth_rate"] = df["growth_rate"].replace([float("inf"), -float("inf")], 0)
+# -------------------------------
+# ACCELERATION (important)
+# -------------------------------
+df["growth_acceleration"] = df.groupby("lake_id")["growth_rate"].diff()
 
-# Fill first rows
+# -------------------------------
+# ROLLING FEATURES
+# -------------------------------
+df["area_rolling_mean_3"] = (
+    df.groupby("lake_id")["lake_area_km2"]
+    .rolling(3)
+    .mean()
+    .reset_index(level=0, drop=True)
+)
+
+df["area_rolling_std_3"] = (
+    df.groupby("lake_id")["lake_area_km2"]
+    .rolling(3)
+    .std()
+    .reset_index(level=0, drop=True)
+)
+
+# -------------------------------
+# CLIMATE FEATURES
+# -------------------------------
+df["temp_lag_1"] = df.groupby("lake_id")["temperature"].shift(1)
+df["precip_lag_1"] = df.groupby("lake_id")["precipitation"].shift(1)
+
+df["precip_rolling_3"] = (
+    df.groupby("lake_id")["precipitation"]
+    .rolling(3)
+    .mean()
+    .reset_index(level=0, drop=True)
+)
+
+# -------------------------------
+# SEASONAL FEATURES
+# -------------------------------
+df["month"] = df["date"].dt.month
+
+# -------------------------------
+# CLEAN NaNs (important)
+# -------------------------------
 df = df.fillna(0)
-
-# -------------------------------
-# CREATE LABEL (RISK)
-# -------------------------------
-df["risk"] = (df["growth_rate"] > 0.3).astype(int)
 
 # -------------------------------
 # SAVE
 # -------------------------------
 df.to_csv("data/processed/lake_features.csv", index=False)
 
-print("✅ Feature dataset ready!")
+print("✅ Feature dataset ready (NO LABELS)")
