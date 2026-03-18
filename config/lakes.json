@@ -3,5 +3,25 @@
     "lake_id": "L1",
     "name": "Imja Tsho",
     "bbox": [86.90, 27.88, 86.96, 27.92]
+  },
+  {
+    "lake_id": "L2",
+    "name": "Tsho Rolpa",
+    "bbox": [86.44, 27.84, 86.54, 27.92] 
+  },
+  {
+    "lake_id": "L3",
+    "name": "Lower Barun",
+    "bbox": [87.08, 27.82, 87.11, 27.85]
+  },
+  {
+    "lake_id": "L4",
+    "name": "Thulagi",
+    "bbox": [84.38, 28.47, 84.41, 28.50]
+  },
+  {
+    "lake_id": "L5",
+    "name": "Lumding",
+    "bbox": [86.60, 27.75, 86.65, 27.80]
   }
 ]
