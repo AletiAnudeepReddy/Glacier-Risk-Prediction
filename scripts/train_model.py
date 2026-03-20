@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import os
+import joblib
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
@@ -48,7 +50,7 @@ X = df[feature_cols]
 y = df["risk_label"]
 
 # -------------------------------
-# TIME-BASED SPLIT (CRITICAL)
+# TIME-BASED SPLIT (VERY IMPORTANT)
 # -------------------------------
 train_df = df[df["date"] < "2020-01-01"]
 test_df  = df[df["date"] >= "2020-01-01"]
@@ -81,14 +83,16 @@ print(classification_report(y_test, rf_preds, target_names=le.classes_))
 print("Confusion Matrix:\n", confusion_matrix(y_test, rf_preds))
 
 # -------------------------------
-# FINAL MODEL - XGBOOST
+# FINAL MODEL - XGBOOST (IMPROVED)
 # -------------------------------
 xgb_model = xgb.XGBClassifier(
-    n_estimators=300,
-    max_depth=5,
-    learning_rate=0.05,
-    subsample=0.8,
-    colsample_bytree=0.8,
+    n_estimators=400,
+    max_depth=6,
+    learning_rate=0.03,
+    subsample=0.85,
+    colsample_bytree=0.85,
+    objective="multi:softmax",   # FIX
+    num_class=3,                 # FIX
     random_state=42,
     eval_metric="mlogloss"
 )
@@ -113,11 +117,23 @@ print("\n🔥 TOP FEATURES:")
 print(importances.head(15))
 
 # -------------------------------
-# SAVE MODEL OUTPUT (OPTIONAL)
+# SAVE MODEL (FIXED)
+# -------------------------------
+os.makedirs("models", exist_ok=True)
+
+joblib.dump(xgb_model, "models/xgboost_model.pkl")
+joblib.dump(le, "models/label_encoder.pkl")
+
+print("\n✅ Model saved at models/xgboost_model.pkl")
+
+# -------------------------------
+# SAVE PREDICTIONS
 # -------------------------------
 df_test_results = test_df.copy()
 df_test_results["predicted_risk"] = le.inverse_transform(xgb_preds)
 
 df_test_results.to_csv("data/processed/model_predictions.csv", index=False)
 
-print("\n✅ Training complete & predictions saved!")
+print("✅ Predictions saved!")
+
+print("\n🔥 TRAINING COMPLETE")
