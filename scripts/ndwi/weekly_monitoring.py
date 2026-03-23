@@ -20,18 +20,19 @@ start_date = end_date.advance(-140, 'day')
 results = []
 
 # -------------------------------
-# CLOUD MASK USING SCL (CORRECT)
+# CLOUD + SNOW MASK (CRITICAL)
 # -------------------------------
 def mask_clouds(image):
 
     scl = image.select('SCL')
 
-    # Keep only clear pixels
-    mask = scl.neq(3) \
-        .And(scl.neq(8)) \
-        .And(scl.neq(9)) \
-        .And(scl.neq(10)) \
-        .And(scl.neq(11))
+    mask = (
+        scl.neq(3)   # cloud shadow
+        .And(scl.neq(8))   # cloud medium
+        .And(scl.neq(9))   # cloud high
+        .And(scl.neq(10))  # cirrus
+        .And(scl.neq(11))  # snow ❗ VERY IMPORTANT
+    )
 
     return image.updateMask(mask)
 
@@ -39,6 +40,11 @@ def mask_clouds(image):
 # PROCESS WEEK
 # -------------------------------
 def process_week(start, end, geometry, lake_id):
+
+    # Skip winter months (unstable NDWI)
+    month = start.get('month').getInfo()
+    if month in [1, 2, 3]:
+        return None
 
     collection = (
         ee.ImageCollection("COPERNICUS/S2_SR")
@@ -58,14 +64,16 @@ def process_week(start, end, geometry, lake_id):
     ndwi = image.normalizedDifference(['B3', 'B8'])
     mndwi = image.normalizedDifference(['B3', 'B11'])
 
-    water = ndwi.gt(0.1).And(mndwi.gt(0))
+    water = ndwi.gt(0.15).And(mndwi.gt(0.05))
 
     # -------------------------------
-    # REMOVE SMALL NOISE
+    # REMOVE NOISE (CONNECTED PIXELS)
     # -------------------------------
-    water = water.updateMask(water) \
-        .connectedPixelCount(100, True) \
-        .gte(50)
+    water = (
+        water.updateMask(water)
+        .connectedPixelCount(200, True)
+        .gte(150)
+    )
 
     # -------------------------------
     # AREA
@@ -85,6 +93,9 @@ def process_week(start, end, geometry, lake_id):
         return None
 
     area_km2 = ee.Number(area).divide(1e6).getInfo()
+
+    if area_km2 == 0:
+        return None
 
     return {
         "lake_id": lake_id,
@@ -123,21 +134,25 @@ for lake in lakes:
 df = pd.DataFrame(results)
 
 if df.empty:
-    print("⚠ No data extracted — check thresholds or bbox")
+    print("⚠ No data extracted")
     exit()
 
 df = df.drop_duplicates(subset=["lake_id", "date"])
-
 df["date"] = pd.to_datetime(df["date"])
 df = df.sort_values(["lake_id", "date"])
 
 # -------------------------------
-# PER-LAKE OUTLIER REMOVAL
+# PER-LAKE CLEANING
 # -------------------------------
 final_dfs = []
 
 for lake_id, group in df.groupby("lake_id"):
 
+    group = group.copy()
+
+    # -------------------------------
+    # REMOVE EXTREME OUTLIERS (IQR)
+    # -------------------------------
     q1 = group["lake_area_km2"].quantile(0.25)
     q3 = group["lake_area_km2"].quantile(0.75)
     iqr = q3 - q1
@@ -151,7 +166,19 @@ for lake_id, group in df.groupby("lake_id"):
     ]
 
     # -------------------------------
-    # INTERPOLATION
+    # REMOVE SUDDEN SPIKES
+    # -------------------------------
+    group["diff"] = group["lake_area_km2"].diff().abs()
+
+    group = group[
+        (group["diff"] < group["lake_area_km2"].rolling(3).mean() * 1.2) |
+        (group["diff"].isna())
+    ]
+
+    group = group.drop(columns=["diff"])
+
+    # -------------------------------
+    # INTERPOLATION (WEEKLY)
     # -------------------------------
     group = group.set_index("date")
 
@@ -165,9 +192,21 @@ for lake_id, group in df.groupby("lake_id"):
 
     group["lake_id"] = lake_id
 
-    group["lake_area_km2"] = group["lake_area_km2"] \
-        .interpolate(method="linear", limit_direction="both") \
-        .bfill().ffill()
+    group["lake_area_km2"] = (
+        group["lake_area_km2"]
+        .interpolate(method="linear", limit_direction="both")
+        .bfill()
+        .ffill()
+    )
+
+    # -------------------------------
+    # SMOOTHING (CRITICAL)
+    # -------------------------------
+    group["lake_area_km2"] = (
+        group["lake_area_km2"]
+        .rolling(3, min_periods=1)
+        .mean()
+    )
 
     group = group.reset_index().rename(columns={"index": "date"})
 
@@ -178,6 +217,6 @@ df = pd.concat(final_dfs, ignore_index=True)
 # -------------------------------
 # SAVE
 # -------------------------------
-df.to_csv("data/continuous/weekly_ndwi_data.csv", index=False)
+df.to_csv("data/continuous/weekly_ndwi_clean.csv", index=False)
 
-print("🔥 FINAL NDWI monitoring dataset ready!")
+print("🔥 CLEAN NDWI PIPELINE COMPLETED SUCCESSFULLY!")
