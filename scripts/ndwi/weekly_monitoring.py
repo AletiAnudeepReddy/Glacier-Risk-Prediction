@@ -12,39 +12,34 @@ with open("config/lakes.json") as f:
     lakes = json.load(f)
 
 # -------------------------------
-# LAST 20 WEEKS
+# LAST 20 WEEKS (LATEST DATA)
 # -------------------------------
 end_date = ee.Date(datetime.datetime.utcnow())
-start_date = end_date.advance(-140, 'day')
+start_date = end_date.advance(-140, 'day')   # 20 weeks
 
 results = []
 
 # -------------------------------
-# CLOUD + SNOW MASK (CRITICAL)
+# CLOUD + SNOW MASK (FIXED)
 # -------------------------------
 def mask_clouds(image):
 
     scl = image.select('SCL')
 
     mask = (
-        scl.neq(3)   # cloud shadow
-        .And(scl.neq(8))   # cloud medium
-        .And(scl.neq(9))   # cloud high
+        scl.neq(3)   # shadow
+        .And(scl.neq(8))   # cloud
+        .And(scl.neq(9))
         .And(scl.neq(10))  # cirrus
-        .And(scl.neq(11))  # snow ❗ VERY IMPORTANT
+        .And(scl.neq(11))  # snow
     )
 
     return image.updateMask(mask)
 
 # -------------------------------
-# PROCESS WEEK
+# PROCESS WEEK (NO MONTH SKIP)
 # -------------------------------
 def process_week(start, end, geometry, lake_id):
-
-    # Skip winter months (unstable NDWI)
-    month = start.get('month').getInfo()
-    if month in [1, 2, 3]:
-        return None
 
     collection = (
         ee.ImageCollection("COPERNICUS/S2_SR")
@@ -53,13 +48,14 @@ def process_week(start, end, geometry, lake_id):
         .map(mask_clouds)
     )
 
+    # Skip if no images
     if collection.size().getInfo() == 0:
         return None
 
     image = collection.median().clip(geometry)
 
     # -------------------------------
-    # WATER DETECTION (TUNED)
+    # WATER DETECTION (STABLE)
     # -------------------------------
     ndwi = image.normalizedDifference(['B3', 'B8'])
     mndwi = image.normalizedDifference(['B3', 'B11'])
@@ -67,7 +63,7 @@ def process_week(start, end, geometry, lake_id):
     water = ndwi.gt(0.15).And(mndwi.gt(0.05))
 
     # -------------------------------
-    # REMOVE NOISE (CONNECTED PIXELS)
+    # REMOVE NOISE
     # -------------------------------
     water = (
         water.updateMask(water)
@@ -142,7 +138,7 @@ df["date"] = pd.to_datetime(df["date"])
 df = df.sort_values(["lake_id", "date"])
 
 # -------------------------------
-# PER-LAKE CLEANING
+# CLEAN PER LAKE
 # -------------------------------
 final_dfs = []
 
@@ -151,7 +147,7 @@ for lake_id, group in df.groupby("lake_id"):
     group = group.copy()
 
     # -------------------------------
-    # REMOVE EXTREME OUTLIERS (IQR)
+    # REMOVE EXTREME OUTLIERS
     # -------------------------------
     q1 = group["lake_area_km2"].quantile(0.25)
     q3 = group["lake_area_km2"].quantile(0.75)
@@ -171,7 +167,7 @@ for lake_id, group in df.groupby("lake_id"):
     group["diff"] = group["lake_area_km2"].diff().abs()
 
     group = group[
-        (group["diff"] < group["lake_area_km2"].rolling(3).mean() * 1.2) |
+        (group["diff"] < group["lake_area_km2"].rolling(3).mean() * 1.5) |
         (group["diff"].isna())
     ]
 
@@ -200,7 +196,7 @@ for lake_id, group in df.groupby("lake_id"):
     )
 
     # -------------------------------
-    # SMOOTHING (CRITICAL)
+    # SMOOTHING
     # -------------------------------
     group["lake_area_km2"] = (
         group["lake_area_km2"]
@@ -219,4 +215,4 @@ df = pd.concat(final_dfs, ignore_index=True)
 # -------------------------------
 df.to_csv("data/continuous/weekly_ndwi_clean.csv", index=False)
 
-print("🔥 CLEAN NDWI PIPELINE COMPLETED SUCCESSFULLY!")
+print("🔥 FINAL CONTINUOUS NDWI PIPELINE READY (LATEST DATA)")
