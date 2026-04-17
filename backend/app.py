@@ -19,6 +19,12 @@ app.add_middleware(
 app.include_router(timeline_router)
 app.include_router(confusion_router)
 app.include_router(features_router)
+from backend.routes import stats, lakes, charts, alerts
+
+app.include_router(stats.router)
+app.include_router(lakes.router)
+app.include_router(charts.router)
+app.include_router(alerts.router)
 
 @app.get("/")
 def home():
