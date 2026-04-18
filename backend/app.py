@@ -25,6 +25,10 @@ app.include_router(stats.router)
 app.include_router(lakes.router)
 app.include_router(charts.router)
 app.include_router(alerts.router)
+from backend.routes import otp, subscribe
+
+app.include_router(otp.router)
+app.include_router(subscribe.router)
 
 @app.get("/")
 def home():

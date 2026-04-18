@@ -10,7 +10,7 @@ pipeline = [
     "scripts/ndwi/compute_features.py",
     "scripts/ndwi/labelling_dataset.py",
     "scripts/ndwi/risk_level_prediction.py",
-    "scripts/ndwi/final_risk_predictions.py"cls
+    "scripts/ndwi/final_risk_predictions.py"
     
 ]
 
