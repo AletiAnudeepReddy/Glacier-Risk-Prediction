@@ -16,7 +16,7 @@ client = Client(
 VERIFY_SID = os.getenv("TWILIO_VERIFY_SID")
 
 # -------------------------------
-# TEMP VERIFIED STORE (IMPORTANT)
+# TEMP VERIFIED STORE
 # -------------------------------
 verified_numbers = set()
 
@@ -24,11 +24,11 @@ verified_numbers = set()
 # MODELS
 # -------------------------------
 class PhoneRequest(BaseModel):
-    phone: str = Field(..., regex=r"^\+\d{10,15}$")
+    phone: str = Field(..., pattern=r"^\+\d{10,15}$")
 
 
 class OTPVerifyRequest(BaseModel):
-    phone: str = Field(..., regex=r"^\+\d{10,15}$")
+    phone: str = Field(..., pattern=r"^\+\d{10,15}$")
     otp: str
 
 
@@ -59,7 +59,7 @@ def verify_otp(data: OTPVerifyRequest):
         )
 
         if check.status == "approved":
-            verified_numbers.add(data.phone)   # 🔥 IMPORTANT
+            verified_numbers.add(data.phone)
             return {"success": True}
         else:
             return {"success": False}
