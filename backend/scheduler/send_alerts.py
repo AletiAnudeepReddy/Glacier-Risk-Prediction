@@ -1,4 +1,3 @@
-
 import pandas as pd
 from backend.services.db import subscribers_collection
 from backend.services.alert_service import send_sms
@@ -13,19 +12,17 @@ if df.empty:
     print("❌ No data found")
     exit()
 
+# -------------------------------
+# GET LATEST STATE PER LAKE
+# -------------------------------
 latest = df.sort_values("date").groupby("lake_id").tail(1)
 
-high_risk = latest[latest["final_risk"] == "High"]
-
-if high_risk.empty:
-    print("✅ No high-risk lakes today")
-    exit()
-
 # -------------------------------
-# SEND ALERTS
+# SEND ALERTS FOR ALL LEVELS
 # -------------------------------
-for _, lake in high_risk.iterrows():
+for _, lake in latest.iterrows():
     lake_id = lake["lake_id"]
+    risk = lake["final_risk"]
 
     users = subscribers_collection.find({"lake_id": lake_id})
 
@@ -38,14 +35,27 @@ for _, lake in high_risk.iterrows():
             if diff.days < 1:
                 continue
 
-        message = f"⚠️ ALERT: {lake_id} is at HIGH RISK. Stay cautious."
+        # -------------------------------
+        # MESSAGE BASED ON RISK
+        # -------------------------------
+        if risk == "High":
+            message = f"⚠️ ALERT: {lake_id} is at HIGH RISK. Immediate caution advised!"
+        elif risk == "Medium":
+            message = f"⚠️ UPDATE: {lake_id} is at MEDIUM RISK. Stay alert."
+        else:
+            message = f"✅ STATUS: {lake_id} is at LOW RISK. No immediate concern."
 
+        # -------------------------------
+        # SEND SMS
+        # -------------------------------
         send_sms(user["phone"], message)
 
-        # Update last sent time
+        # -------------------------------
+        # UPDATE DB
+        # -------------------------------
         subscribers_collection.update_one(
             {"_id": user["_id"]},
             {"$set": {"last_alert_sent": datetime.utcnow()}}
         )
 
-        print(f"✅ Sent alert to {user['phone']}")
+        print(f"✅ Sent {risk} alert to {user['phone']}")

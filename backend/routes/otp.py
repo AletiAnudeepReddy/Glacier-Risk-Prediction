@@ -3,8 +3,10 @@ from pydantic import BaseModel, Field
 import os
 from dotenv import load_dotenv
 from twilio.rest import Client
+from pathlib import Path
 
-load_dotenv()
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 router = APIRouter()
 

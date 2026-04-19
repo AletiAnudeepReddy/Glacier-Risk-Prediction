@@ -29,6 +29,12 @@ from backend.routes import otp, subscribe
 
 app.include_router(otp.router)
 app.include_router(subscribe.router)
+from backend.routes import pipeline
+
+app.include_router(pipeline.router)
+from backend.routes import alert_trigger
+
+app.include_router(alert_trigger.router)
 
 @app.get("/")
 def home():
